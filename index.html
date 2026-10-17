@@ -1,0 +1,287 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PI Infinito ♾️</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1020;color:#fff;font-family:system-ui,Arial;overflow:hidden}
+header{height:auto;min-height:64px;background:#151c2b;border-bottom:1px solid #344057;
+display:flex;align-items:center;gap:7px;padding:10px;flex-wrap:wrap}
+h3{margin:0 auto 0 0;font-size:17px}
+button,input{font:inherit}
+button{background:#222d43;color:white;border:1px solid #43516c;
+border-radius:10px;padding:9px 12px;cursor:pointer}
+button.active{background:#426dff}
+#world{height:calc(100dvh - 128px);overflow:auto;touch-action:pan-x pan-y}
+#grid{display:grid;width:max-content}
+.cell{display:grid;place-items:center;font-family:monospace;flex:none}
+#controls{height:64px;display:flex;align-items:center;gap:7px;padding:8px;flex-wrap:wrap}
+input{width:150px;min-width:0;padding:9px;border-radius:9px;
+border:1px solid #43516c;background:#151c2b;color:white}
+#status{font-size:12px;color:#b9c5dc}
+@media(max-width:600px){
+ header{gap:5px}h3{width:100%}header button{flex:1;padding:8px 3px;font-size:12px}
+ #world{height:calc(100dvh - 160px)}
+ #controls{height:96px;gap:5px}
+ input{width:125px}
+}
+</style>
+</head>
+<body>
+<header>
+<h3>π PI INFINITO</h3>
+<button class="active" data-mode="numbers"># Números</button>
+<button data-mode="letters">Aa Letras</button>
+<button data-mode="colors">🌈 Colores</button>
+<button data-mode="bw">◐ B/N</button>
+</header>
+
+<div id="world"><div id="grid"></div></div>
+
+<div id="controls">
+<button id="minus">−</button>
+<button id="plus">+</button>
+<span id="zoom">1.0×</span>
+<input id="query" placeholder="Buscar frase...">
+<button id="find">Buscar</button>
+<button id="home">⌂ Inicio</button>
+<span id="status">Preparando pi...</span>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const world=document.querySelector('#world');
+const grid=document.querySelector('#grid');
+const status=document.querySelector('#status');
+const zoomLabel=document.querySelector('#zoom');
+
+let mode='numbers';
+let zoom=1;
+let tile=22;
+let cols=50;
+let letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+let digits='';
+let authentic='';
+let randomStart=3000;
+let randomState=123456789;
+let renderPending=false;
+
+const palette=[
+ '#ff5252','#ff982e','#ffe34d','#51d86a','#28d8cf',
+ '#3988ff','#7856ff','#ee55ce','#b8ef4c','#f6f6ff'
+];
+
+// Generador de dígitos auténticos de pi mediante el
+// algoritmo spigot de Rabinowitz-Wagon, usando BigInt.
+function* piSpigot(){
+ let q=1n,r=0n,t=1n,k=1n,n=3n,l=3n;
+ while(true){
+  if(4n*q+r-t<n*t){
+   yield Number(n);
+   const nr=10n*(r-n*t);
+   n=(10n*(3n*q+r))/t-10n*n;
+   q*=10n;
+   r=nr;
+  }else{
+   const nr=(2n*q+r)*l;
+   const nn=(q*(7n*k)+2n+r*l)/(t*l);
+   q*=k;
+   t*=l;
+   l+=2n;
+   k+=1n;
+   r=nr;
+   n=nn;
+  }
+ }
+}
+
+const piGenerator=piSpigot();
+
+// Determinista durante esta sesión; no repite un bloque fijo.
+function randomDigit(){
+ randomState^=randomState<<13;
+ randomState^=randomState>>>17;
+ randomState^=randomState<<5;
+ randomState>>>=0;
+ return String(randomState%10);
+}
+
+function generateInitialPi(){
+ // El spigot entrega primero el 3 y después los decimales.
+ // Se conservan 3000 dígitos auténticos.
+ for(let i=0;i<randomStart;i++){
+  authentic+=String(piGenerator.next().value);
+ }
+ digits=authentic;
+ status.textContent='Pi real: '+digits.length+' dígitos';
+}
+
+function ensureDigits(count){
+ // Los primeros 3000 dígitos son reales.
+ // Después se generan dígitos pseudoaleatorios bajo demanda.
+ while(digits.length<count){
+  digits+=randomDigit();
+ }
+}
+
+function digitAt(i){
+ ensureDigits(i+1);
+ return digits[i];
+}
+
+function charAt(d){
+ return letters[Number(d)]||d;
+}
+
+function render(){
+ renderPending=false;
+ const width=tile*zoom;
+ const visibleCols=Math.max(1,Math.ceil(world.clientWidth/width));
+ const visibleRows=Math.max(1,Math.ceil(world.clientHeight/width));
+
+ cols=visibleCols;
+ const topRow=Math.floor(world.scrollTop/width);
+ const leftCol=Math.floor(world.scrollLeft/width);
+ const first=topRow*cols+leftCol;
+ const count=(topRow+visibleRows+2)*cols;
+
+ ensureDigits(Math.max(count,first+visibleCols*visibleRows));
+
+ grid.style.gridTemplateColumns=`repeat(${cols},${width}px)`;
+ grid.style.gridAutoRows=width+'px';
+ grid.innerHTML='';
+
+ const fragment=document.createDocumentFragment();
+ for(let i=0;i<count;i++){
+  const d=digitAt(i);
+  const el=document.createElement('div');
+  el.className='cell';
+  el.style.width=width+'px';
+  el.style.height=width+'px';
+
+  if(mode==='colors'){
+   el.style.background=palette[Number(d)];
+  }else if(mode==='bw'){
+   el.style.background=Number(d)<=5?'#fff':'#000';
+  }else{
+   el.style.background='#101827';
+   el.style.color='#f3f6ff';
+   el.style.border='1px solid #273247';
+   el.textContent=mode==='letters'?charAt(d):d;
+   el.style.fontSize=Math.max(7,width*.65)+'px';
+  }
+
+  fragment.appendChild(el);
+ }
+ grid.appendChild(fragment);
+
+ // Mantiene el mundo navegable sin límite práctico de filas.
+ grid.style.minHeight=Math.max(
+   world.clientHeight+width*10,
+   (topRow+visibleRows+10)*width
+ )+'px';
+
+ zoomLabel.textContent=zoom.toFixed(2)+'×';
+ status.textContent=first<randomStart
+  ?'Pi real · posición '+(first+1).toLocaleString('es-MX')
+  :'Zona aleatoria · posición '+(first+1).toLocaleString('es-MX');
+}
+
+function scheduleRender(){
+ if(renderPending)return;
+ renderPending=true;
+ requestAnimationFrame(render);
+}
+
+document.querySelectorAll('[data-mode]').forEach(button=>{
+ button.addEventListener('click',()=>{
+  mode=button.dataset.mode;
+  document.querySelectorAll('[data-mode]').forEach(b=>
+   b.classList.toggle('active',b===button)
+  );
+  scheduleRender();
+ });
+});
+
+function setZoom(value){
+ const old=tile*zoom;
+ const center=world.scrollTop+world.clientHeight/2;
+ zoom=Math.max(.35,Math.min(3,value));
+ const next=tile*zoom;
+ world.scrollTop=center*(next/old)-world.clientHeight/2;
+ scheduleRender();
+}
+
+document.querySelector('#plus').onclick=()=>setZoom(zoom*1.25);
+document.querySelector('#minus').onclick=()=>setZoom(zoom/1.25);
+world.addEventListener('scroll',scheduleRender);
+window.addEventListener('resize',scheduleRender);
+
+document.querySelector('#home').onclick=()=>{
+ world.scrollTop=0;
+ world.scrollLeft=0;
+ scheduleRender();
+};
+
+document.querySelector('#find').onclick=()=>{
+ const query=document.querySelector('#query').value.trim().toUpperCase();
+ if(!query)return;
+
+ let target='';
+ if(mode==='numbers'){
+  target=query.replace(/[^0-9]/g,'');
+ }else if(mode==='letters'){
+  for(const ch of query){
+   const n=letters.indexOf(ch);
+   if(n>=0)target+=String(n%10);
+   else if(/[0-9]/.test(ch))target+=ch;
+  }
+ }else{
+  status.textContent='Cambia a Números o Letras para buscar.';
+  return;
+ }
+
+ if(!target){
+  status.textContent='Escribe una secuencia para buscar.';
+  return;
+ }
+
+ // Busca primero en los dígitos ya disponibles.
+ let index=digits.indexOf(target);
+
+ // Amplía la zona aleatoria si hace falta.
+ if(index<0){
+  ensureDigits(digits.length+100000);
+  index=digits.indexOf(target);
+ }
+
+ if(index>=0){
+  const width=tile*zoom;
+  const row=Math.floor(index/cols);
+  world.scrollTop=row*width;
+  status.textContent='¡Encontrado! Posición '+(index+1).toLocaleString('es-MX');
+  scheduleRender();
+ }else{
+  status.textContent='No encontrado en la zona generada.';
+ }
+};
+
+world.addEventListener('wheel',e=>{
+ if(e.ctrlKey){
+  e.preventDefault();
+  setZoom(zoom*(e.deltaY<0?1.1:.9));
+ }
+},{passive:false});
+
+generateInitialPi();
+render();
+
+})();
+</script>
+</body>
+</html>
